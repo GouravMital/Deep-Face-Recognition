@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useListFaces, useDeleteFace, useImportCsvPersons, useRegisterFace } from "@workspace/api-client-react";
 import { Card, Button, CyberBadge } from "../components/ui-elements";
-import { Database, UserMinus, Plus, FileSpreadsheet, Loader2, Download, Users, CheckCircle, AlertCircle } from "lucide-react";
+import { Database, UserMinus, Plus, FileSpreadsheet, Loader2, Upload, Users, CheckCircle, AlertCircle, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { RegistrationDialog } from "../components/registration-dialog";
 import { detectSingleFaceFromDataUrl } from "../lib/face-api";
@@ -39,10 +39,13 @@ export default function Dataset() {
   const [lfwStatus, setLfwStatus] = useState<LFWStatus | null>(null);
   const [lfwPersons, setLfwPersons] = useState<LFWPerson[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [processedCount, setProcessedCount] = useState(0);
   const [totalToProcess, setTotalToProcess] = useState(0);
   const [processLogs, setProcessLogs] = useState<ProcessLog[]>([]);
   const [maxPersons, setMaxPersons] = useState(100);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const addLog = (text: string, type: ProcessLog["type"] = "info") =>
     setProcessLogs(prev => [{ text, type }, ...prev.slice(0, 49)]);
@@ -73,15 +76,47 @@ export default function Dataset() {
     }
   }, [lfwStatus, fetchLFWStatus]);
 
-  const startDownload = async () => {
+  const uploadLFW = async (file: File) => {
+    setIsUploading(true);
+    setUploadProgress(0);
+    addLog(`Uploading ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)...`, "info");
+
     try {
-      await fetch(`${API_BASE}/api/lfw/download`, { method: "POST", credentials: "include" });
-      addLog("LFW download initiated from vis-www.cs.umass.edu (~177MB). This may take several minutes...", "info");
-      setLfwStatus(s => s ? { ...s, state: "downloading" } : null);
-      setTimeout(fetchLFWStatus, 2000);
+      const formData = new FormData();
+      formData.append("file", file);
+
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `${API_BASE}/api/lfw/upload`);
+        xhr.withCredentials = true;
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
+        };
+        xhr.onload = () => {
+          if (xhr.status === 200) resolve();
+          else reject(new Error(`Upload failed: ${xhr.status}`));
+        };
+        xhr.onerror = () => reject(new Error("Upload network error"));
+        xhr.send(formData);
+      });
+
+      addLog("Upload complete. Extracting dataset (may take ~1 min)...", "info");
+      setLfwStatus(s => s ? { ...s, state: "extracting" } : null);
+      setTimeout(fetchLFWStatus, 3000);
     } catch (e) {
-      addLog("Failed to start download: " + String(e), "error");
+      addLog("Upload failed: " + String(e), "error");
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(0);
     }
+  };
+
+  const resetDataset = async () => {
+    if (!confirm("Clear all LFW images from the server? This cannot be undone.")) return;
+    await fetch(`${API_BASE}/api/lfw/reset`, { method: "DELETE", credentials: "include" });
+    setLfwPersons([]);
+    fetchLFWStatus();
+    addLog("Dataset cleared.", "info");
   };
 
   const processLFWImages = async () => {
@@ -223,10 +258,14 @@ export default function Dataset() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <Card className="lg:col-span-1 space-y-4">
             <h3 className="text-lg font-display text-primary flex items-center gap-2">
-              <Download className="w-5 h-5" /> LFW Dataset
+              <Upload className="w-5 h-5" /> LFW Dataset
             </h3>
             <p className="text-xs font-mono text-muted-foreground leading-relaxed">
-              The Labeled Faces in the Wild (LFW) dataset contains 13,233 face images of 5,749 public figures. Download it from the official source and extract CS-LBP descriptors to train the recognition engine.
+              The Labeled Faces in the Wild (LFW) dataset contains 13,233 face images of 5,749 public figures. Download it from{" "}
+              <a href="https://www.kaggle.com/datasets/jessicali9530/lfw-dataset" target="_blank" rel="noreferrer" className="text-primary underline">Kaggle</a>
+              {" "}or{" "}
+              <a href="http://vis-www.cs.umass.edu/lfw/" target="_blank" rel="noreferrer" className="text-primary underline">UMass</a>
+              , then upload the ZIP or .tar.gz here.
             </p>
 
             {lfwStatus ? (
@@ -235,40 +274,60 @@ export default function Dataset() {
                   lfwStatus.isReady ? "border-green-500/30 bg-green-500/10 text-green-400"
                   : lfwStatus.state === "error" ? "border-destructive/30 bg-destructive/10 text-destructive"
                   : "border-primary/30 bg-primary/10 text-primary"}`}>
-                  {lfwStatus.state === "idle" && !lfwStatus.isReady && "Not downloaded yet"}
-                  {lfwStatus.state === "downloading" && "⬇ Downloading LFW dataset (~177MB) via fetch..."}
-                  {lfwStatus.state === "extracting" && "📦 Extracting archive (this takes ~1 min)..."}
+                  {!lfwStatus.isReady && lfwStatus.state === "idle" && "No dataset uploaded yet"}
+                  {lfwStatus.state === "extracting" && "📦 Extracting archive..."}
                   {lfwStatus.isReady && `✓ Ready — ${lfwStatus.totalPersons} persons, ${lfwStatus.totalImages} images`}
-                  {lfwStatus.state === "error" && (
-                    <span>Error: {lfwStatus.error || "Download failed"}</span>
-                  )}
+                  {lfwStatus.state === "error" && `Error: ${lfwStatus.error || "Extraction failed"}`}
                 </div>
 
-                {(lfwStatus.state === "downloading" || lfwStatus.state === "extracting") && (
+                {lfwStatus.state === "extracting" && (
                   <div className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
-                    <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                    {lfwStatus.state === "downloading" ? "Downloading (~177MB, may take 2–5 min)..." : "Extracting archive..."}
+                    <Loader2 className="w-4 h-4 animate-spin text-primary" /> Extracting, please wait...
                   </div>
                 )}
 
-                {(lfwStatus.state === "idle" || lfwStatus.state === "error") && !lfwStatus.isReady && (
-                  <Button className="w-full" onClick={startDownload}>
-                    <Download className="w-4 h-4 mr-2" />
-                    {lfwStatus.state === "error" ? "Retry Download" : "Download from Official Source"}
-                  </Button>
+                {/* Upload area */}
+                {!lfwStatus.isReady && lfwStatus.state !== "extracting" && (
+                  <>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".zip,.tgz,.tar.gz,.gz"
+                      className="hidden"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) uploadLFW(f); e.target.value = ""; }}
+                    />
+                    {isUploading ? (
+                      <div className="space-y-2">
+                        <div className="flex justify-between font-mono text-xs text-muted-foreground">
+                          <span>Uploading...</span><span>{uploadProgress}%</span>
+                        </div>
+                        <div className="w-full bg-secondary rounded-full h-2">
+                          <div className="h-2 bg-primary rounded-full transition-all" style={{ width: `${uploadProgress}%` }} />
+                        </div>
+                      </div>
+                    ) : (
+                      <Button className="w-full" onClick={() => fileInputRef.current?.click()}>
+                        <Upload className="w-4 h-4 mr-2" /> Upload LFW ZIP / tar.gz
+                      </Button>
+                    )}
+                  </>
                 )}
 
-                {(lfwStatus.isReady) && (
+                {/* Processing controls when ready */}
+                {lfwStatus.isReady && (
                   <div className="space-y-2">
                     <label className="font-mono text-xs text-muted-foreground">
                       Max persons to import (of {lfwPersons.length} available)
                     </label>
-                    <input type="number" min={1} max={lfwPersons.length} value={maxPersons}
-                      onChange={e => setMaxPersons(Math.min(lfwPersons.length, Math.max(1, parseInt(e.target.value) || 1)))}
+                    <input type="number" min={1} max={lfwPersons.length || 9999} value={maxPersons}
+                      onChange={e => setMaxPersons(Math.max(1, parseInt(e.target.value) || 1))}
                       className="w-full bg-input border border-border rounded px-3 py-2 font-mono text-sm text-foreground" />
-                    <Button className="w-full" onClick={processLFWImages} isLoading={isProcessing} disabled={isProcessing || lfwPersons.length === 0}>
+                    <Button className="w-full" onClick={processLFWImages} isLoading={isProcessing} disabled={isProcessing}>
                       <Users className="w-4 h-4 mr-2" />
                       {isProcessing ? `Processing ${processedCount}/${totalToProcess}...` : `Extract & Register ${maxPersons} Persons`}
+                    </Button>
+                    <Button variant="outline" className="w-full" onClick={resetDataset}>
+                      <Trash2 className="w-4 h-4 mr-2" /> Clear Dataset
                     </Button>
                   </div>
                 )}
