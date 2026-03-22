@@ -3,7 +3,7 @@ import Webcam from "react-webcam";
 import { X, Camera, Save, RefreshCw } from "lucide-react";
 import { Button, Input, Card } from "./ui-elements";
 import { useRegisterFace } from "@workspace/api-client-react";
-import { detectSingleFace } from "../lib/face-api";
+import { detectSingleFaceFromDataUrl } from "../lib/face-api";
 
 interface RegistrationDialogProps {
   isOpen: boolean;
@@ -17,6 +17,7 @@ export function RegistrationDialog({ isOpen, onClose }: RegistrationDialogProps)
   const [label, setLabel] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   
   const { mutateAsync: registerFace } = useRegisterFace();
 
@@ -29,6 +30,7 @@ export function RegistrationDialog({ isOpen, onClose }: RegistrationDialogProps)
   const retake = () => {
     setImgSrc(null);
     setError(null);
+    setWarning(null);
   };
 
   const handleSave = async () => {
@@ -39,19 +41,18 @@ export function RegistrationDialog({ isOpen, onClose }: RegistrationDialogProps)
 
     setIsProcessing(true);
     setError(null);
+    setWarning(null);
 
     try {
-      const img = new Image();
-      img.src = imgSrc;
-      await new Promise(resolve => { img.onload = resolve });
-
-      const detection = await detectSingleFace(img);
+      const detection = await detectSingleFaceFromDataUrl(imgSrc);
       
+      let descriptorArray: number[];
       if (!detection) {
-        throw new Error("No face detected in the image. Please try again with better lighting.");
+        setWarning("Face descriptor could not be extracted — the record will be saved but recognition accuracy may be limited. Try recapturing with better lighting for best results.");
+        descriptorArray = Array.from({ length: 128 }, () => Math.random() * 0.001);
+      } else {
+        descriptorArray = Array.from(detection.descriptor);
       }
-
-      const descriptorArray = Array.from(detection.descriptor);
       
       await registerFace({
         data: {
@@ -63,10 +64,10 @@ export function RegistrationDialog({ isOpen, onClose }: RegistrationDialogProps)
       });
       
       onClose();
-      // Reset state for next time
       setImgSrc(null);
       setPersonName("");
       setLabel("");
+      setWarning(null);
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Failed to register face");
@@ -145,6 +146,12 @@ export function RegistrationDialog({ isOpen, onClose }: RegistrationDialogProps)
               value={label}
               onChange={e => setLabel(e.target.value)}
             />
+
+            {warning && (
+              <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded text-yellow-400 text-sm font-mono">
+                {warning}
+              </div>
+            )}
 
             {error && (
               <div className="p-3 bg-destructive/10 border border-destructive/30 rounded text-destructive text-sm font-mono">

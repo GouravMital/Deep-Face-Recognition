@@ -26,10 +26,52 @@ export async function detectFaces(element: HTMLVideoElement | HTMLImageElement) 
     .withFaceDescriptors();
 }
 
-export async function detectSingleFace(element: HTMLVideoElement | HTMLImageElement) {
-  return await faceapi.detectSingleFace(element, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
+export async function detectSingleFace(element: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement) {
+  const result = await faceapi.detectSingleFace(element, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 }))
     .withFaceLandmarks()
     .withFaceDescriptor();
+  return result ?? null;
+}
+
+export async function detectSingleFaceFromDataUrl(dataUrl: string): Promise<{ descriptor: Float32Array } | null> {
+  return new Promise((resolve) => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) { resolve(null); return; }
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = async () => {
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
+      ctx.drawImage(img, 0, 0);
+
+      try {
+        const thresholds = [0.2, 0.1];
+        let detection = await faceapi
+          .detectSingleFace(canvas, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 }))
+          .withFaceLandmarks()
+          .withFaceDescriptor();
+
+        if (!detection) {
+          for (const t of thresholds) {
+            detection = await faceapi
+              .detectSingleFace(canvas, new faceapi.SsdMobilenetv1Options({ minConfidence: t }))
+              .withFaceLandmarks()
+              .withFaceDescriptor();
+            if (detection) break;
+          }
+        }
+
+        resolve(detection ?? null);
+      } catch (e) {
+        console.warn('Face detection error:', e);
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
 }
 
 export function createFaceMatcher(labeledDescriptors: faceapi.LabeledFaceDescriptors[], distanceThreshold = 0.5) {
