@@ -1,0 +1,19 @@
+packages:
+  "@vladmandic/face-api": "Browser-based face detection and recognition models"
+  "react-webcam": "Webcam integration for live face detection"
+  "framer-motion": "UI animations and scanner effects"
+  "recharts": "Dashboard analytics charts"
+  "date-fns": "Date formatting"
+  "lucide-react": "Icons"
+  "clsx": "Classname utility"
+  "tailwind-merge": "Tailwind class merging"
+
+images:
+  - path: "artifacts/face-recognition/public/images/biometric-bg.png"
+    description: "Dark, high-tech abstract biometric background with glowing cyan and neon green grid lines, cybernetic scanning interface aesthetic"
+    aspect_ratio: "16:9"
+
+notes:
+  - using @workspace/replit-auth-web for authentication
+  - face-api models are loaded via jsdelivr CDN
+  - throttling face recognition API calls to prevent backend overload during live camera feed

@@ -1,22 +1,30 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Face Recognition System API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication operations
+  - name: faces
+    description: Face management operations
+  - name: recognition
+    description: Recognition operations
+  - name: attendance
+    description: Attendance operations
+  - name: csv
+    description: CSV import operations
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,7 +32,293 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/user:
+    get:
+      operationId: getCurrentAuthUser
+      tags: [auth]
+      summary: Get current authenticated user
+      responses:
+        "200":
+          description: Current user info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetCurrentAuthUserResponse"
+
+  /faces:
+    get:
+      operationId: listFaces
+      tags: [faces]
+      summary: List all registered faces
+      security:
+        - sessionAuth: []
+      responses:
+        "200":
+          description: List of registered faces
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FaceRecord"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    post:
+      operationId: registerFace
+      tags: [faces]
+      summary: Register a new face
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterFaceBody"
+      responses:
+        "201":
+          description: Face registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FaceRecord"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /faces/{id}:
+    delete:
+      operationId: deleteFace
+      tags: [faces]
+      summary: Delete a registered face
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Face deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteFaceResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /recognition/identify:
+    post:
+      operationId: identifyFace
+      tags: [recognition]
+      summary: Identify a face from image data
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IdentifyFaceBody"
+      responses:
+        "200":
+          description: Recognition results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentifyFaceResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /recognition/log:
+    get:
+      operationId: listRecognitionLogs
+      tags: [recognition]
+      summary: List recognition logs
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Recognition logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RecognitionLog"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    post:
+      operationId: createRecognitionLog
+      tags: [recognition]
+      summary: Create a recognition log entry
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRecognitionLogBody"
+      responses:
+        "201":
+          description: Recognition log created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecognitionLog"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /attendance:
+    get:
+      operationId: listAttendance
+      tags: [attendance]
+      summary: List attendance records
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: personName
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+      responses:
+        "200":
+          description: Attendance records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AttendanceRecord"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    post:
+      operationId: markAttendance
+      tags: [attendance]
+      summary: Mark attendance for a recognized person
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarkAttendanceBody"
+      responses:
+        "201":
+          description: Attendance marked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttendanceRecord"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /attendance/export:
+    get:
+      operationId: exportAttendance
+      tags: [attendance]
+      summary: Export attendance as CSV
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: CSV export
+          content:
+            text/csv:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /csv/import:
+    post:
+      operationId: importCsvPersons
+      tags: [csv]
+      summary: Import persons from CSV data
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportCsvBody"
+      responses:
+        "200":
+          description: Import result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportCsvResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /stats:
+    get:
+      operationId: getStats
+      tags: [recognition]
+      summary: Get system statistics
+      security:
+        - sessionAuth: []
+      responses:
+        "200":
+          description: System stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemStats"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
 components:
+  securitySchemes:
+    sessionAuth:
+      type: apiKey
+      in: cookie
+      name: session
+
+  responses:
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
   schemas:
     HealthStatus:
       type: object
@@ -34,3 +328,262 @@ components:
       required:
         - status
 
+    GetCurrentAuthUserResponse:
+      type: object
+      properties:
+        isAuthenticated:
+          type: boolean
+        user:
+          $ref: "#/components/schemas/AuthUser"
+      required:
+        - isAuthenticated
+
+    AuthUser:
+      type: object
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        profileImage:
+          type: string
+      required:
+        - id
+        - username
+
+    FaceRecord:
+      type: object
+      properties:
+        id:
+          type: integer
+        personName:
+          type: string
+        label:
+          type: string
+        descriptor:
+          type: string
+        imageDataUrl:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        registeredById:
+          type: string
+      required:
+        - id
+        - personName
+        - label
+        - descriptor
+        - createdAt
+
+    RegisterFaceBody:
+      type: object
+      properties:
+        personName:
+          type: string
+        label:
+          type: string
+        descriptor:
+          type: string
+        imageDataUrl:
+          type: string
+      required:
+        - personName
+        - label
+        - descriptor
+
+    DeleteFaceResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+      required:
+        - success
+
+    IdentifyFaceBody:
+      type: object
+      properties:
+        descriptor:
+          type: string
+          description: JSON array of float values representing face descriptor
+      required:
+        - descriptor
+
+    IdentifyFaceResponse:
+      type: object
+      properties:
+        matches:
+          type: array
+          items:
+            $ref: "#/components/schemas/FaceMatch"
+        recognized:
+          type: boolean
+      required:
+        - matches
+        - recognized
+
+    FaceMatch:
+      type: object
+      properties:
+        faceId:
+          type: integer
+        personName:
+          type: string
+        label:
+          type: string
+        distance:
+          type: number
+        confidence:
+          type: number
+      required:
+        - faceId
+        - personName
+        - label
+        - distance
+        - confidence
+
+    RecognitionLog:
+      type: object
+      properties:
+        id:
+          type: integer
+        faceId:
+          type: integer
+        personName:
+          type: string
+        confidence:
+          type: number
+        imageDataUrl:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        sessionId:
+          type: string
+        userId:
+          type: string
+      required:
+        - id
+        - personName
+        - confidence
+        - timestamp
+
+    CreateRecognitionLogBody:
+      type: object
+      properties:
+        faceId:
+          type: integer
+        personName:
+          type: string
+        confidence:
+          type: number
+        imageDataUrl:
+          type: string
+        sessionId:
+          type: string
+      required:
+        - personName
+        - confidence
+
+    AttendanceRecord:
+      type: object
+      properties:
+        id:
+          type: integer
+        personName:
+          type: string
+        faceId:
+          type: integer
+        date:
+          type: string
+          format: date
+        checkInTime:
+          type: string
+          format: date-time
+        checkOutTime:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [present, absent, late]
+        userId:
+          type: string
+      required:
+        - id
+        - personName
+        - date
+        - checkInTime
+        - status
+
+    MarkAttendanceBody:
+      type: object
+      properties:
+        personName:
+          type: string
+        faceId:
+          type: integer
+        status:
+          type: string
+          enum: [present, absent, late]
+      required:
+        - personName
+        - status
+
+    ImportCsvBody:
+      type: object
+      properties:
+        csvContent:
+          type: string
+          description: Raw CSV string content
+        hasHeader:
+          type: boolean
+          default: true
+      required:
+        - csvContent
+
+    ImportCsvResponse:
+      type: object
+      properties:
+        imported:
+          type: integer
+        skipped:
+          type: integer
+        errors:
+          type: array
+          items:
+            type: string
+      required:
+        - imported
+        - skipped
+        - errors
+
+    SystemStats:
+      type: object
+      properties:
+        totalFaces:
+          type: integer
+        totalRecognitions:
+          type: integer
+        totalAttendance:
+          type: integer
+        recentRecognitions:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecognitionLog"
+      required:
+        - totalFaces
+        - totalRecognitions
+        - totalAttendance
+        - recentRecognitions
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
