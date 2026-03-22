@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, facesTable, recognitionLogsTable, attendanceTable } from "@workspace/db";
 import { desc, sql } from "drizzle-orm";
+import { normaliseDescriptor } from "../lib/cs-lbp-dbn";
 
 const router: IRouter = Router();
 
@@ -37,6 +38,9 @@ router.post("/recognition/identify", async (req, res) => {
       return;
     }
 
+    // Ensure query descriptor is in DBN feature space
+    const queryDesc = normaliseDescriptor(inputDesc);
+
     const allFaces = await db.select().from(facesTable);
 
     if (allFaces.length === 0) {
@@ -54,7 +58,9 @@ router.post("/recognition/identify", async (req, res) => {
         } catch {
           return null;
         }
-        const distance = euclideanDistance(inputDesc, storedDesc);
+        // Upgrade stored descriptor to DBN space if it's a legacy FaceNet descriptor
+        const normStored = normaliseDescriptor(storedDesc);
+        const distance = euclideanDistance(queryDesc, normStored);
         const confidence = distanceToConfidence(distance);
         return {
           faceId: face.id,

@@ -23,7 +23,7 @@ NeuroSight — CS-LBP Facial Recognition System. A full-stack web app with user 
 
 - **5 Modules**: Dashboard, Recognition (image upload + webcam), Live Camera feed, CSV Dataset, Attendance
 - **Face Detection**: face-api.js loaded from CDN (SSD MobileNet v1 for detection, FaceNet for 128-D descriptors)
-- **CS-LBP algorithm**: Center-Symmetric Local Binary Pattern + Deep Belief Network concepts used for multi-angle recognition
+- **CS-LBP + DBN pipeline**: Real implementation in `src/lib/cs-lbp.ts` — face crop → grayscale → CS-LBP codes (4 symmetric neighbor pairs per pixel) → 4×4 spatial histogram (256-D) → combined with FaceNet 128-D → DBN (384→256→128, sigmoid, deterministic seeded weights, L2-normalised) → enhanced 128-D descriptor stored in DB and used for recognition. Backend mirrors DBN in `src/lib/cs-lbp-dbn.ts` to upgrade legacy FaceNet-only descriptors at comparison time.
 - **Bounding boxes**: Green for known faces (name + confidence %), red for unknowns
 - **Mobile support**: Camera facing mode toggle (front/back camera)
 - **Attendance system**: Auto-marks attendance on recognition, CSV export

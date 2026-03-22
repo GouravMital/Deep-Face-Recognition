@@ -1,4 +1,5 @@
 import * as faceapi from '@vladmandic/face-api';
+import { enhanceWithCSLBPAndDBN, applyDBN } from './cs-lbp';
 
 const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
 
@@ -6,12 +7,11 @@ export async function loadFaceModels() {
   if (faceapi.nets.ssdMobilenetv1.isLoaded && faceapi.nets.faceLandmark68Net.isLoaded && faceapi.nets.faceRecognitionNet.isLoaded) {
     return true;
   }
-  
   try {
     await Promise.all([
       faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
       faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
     ]);
     return true;
   } catch (error) {
@@ -20,20 +20,58 @@ export async function loadFaceModels() {
   }
 }
 
+/**
+ * Detect all faces on a video/image element.
+ * Each detection's descriptor is enhanced with CS-LBP + DBN.
+ */
 export async function detectFaces(element: HTMLVideoElement | HTMLImageElement) {
-  return await faceapi.detectAllFaces(element, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
+  const detections = await faceapi
+    .detectAllFaces(element, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
     .withFaceLandmarks()
     .withFaceDescriptors();
+
+  // Enhance each detection's descriptor with CS-LBP + DBN
+  return detections.map(det => {
+    const box = det.detection.box;
+    const enhanced = enhanceWithCSLBPAndDBN(det.descriptor, element, {
+      x: box.x, y: box.y, width: box.width, height: box.height,
+    });
+    // Return a new object with the enhanced descriptor
+    return {
+      ...det,
+      descriptor: enhanced,
+      _raw_facenet: det.descriptor, // keep original for reference
+    };
+  });
 }
 
+/**
+ * Detect a single face on a canvas/image/video element.
+ * Returns the detection with a CS-LBP + DBN enhanced descriptor.
+ */
 export async function detectSingleFace(element: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement) {
-  const result = await faceapi.detectSingleFace(element, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 }))
+  const result = await faceapi
+    .detectSingleFace(element, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 }))
     .withFaceLandmarks()
     .withFaceDescriptor();
-  return result ?? null;
+
+  if (!result) return null;
+
+  const box = result.detection.box;
+  const enhanced = enhanceWithCSLBPAndDBN(result.descriptor, element, {
+    x: box.x, y: box.y, width: box.width, height: box.height,
+  });
+  return { ...result, descriptor: enhanced };
 }
 
-export async function detectSingleFaceFromDataUrl(dataUrl: string): Promise<{ descriptor: Float32Array } | null> {
+/**
+ * Detect a single face from a base64 data URL.
+ * Draws onto a canvas (gives face-api.js proper pixel access),
+ * runs detection, then applies CS-LBP + DBN enhancement.
+ */
+export async function detectSingleFaceFromDataUrl(
+  dataUrl: string
+): Promise<{ descriptor: Float32Array } | null> {
   return new Promise((resolve) => {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
@@ -47,23 +85,25 @@ export async function detectSingleFaceFromDataUrl(dataUrl: string): Promise<{ de
       ctx.drawImage(img, 0, 0);
 
       try {
-        const thresholds = [0.2, 0.1];
-        let detection = await faceapi
-          .detectSingleFace(canvas, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 }))
-          .withFaceLandmarks()
-          .withFaceDescriptor();
+        const opts = (conf: number) => new faceapi.SsdMobilenetv1Options({ minConfidence: conf });
+        let detection = await faceapi.detectSingleFace(canvas, opts(0.3))
+          .withFaceLandmarks().withFaceDescriptor();
 
         if (!detection) {
-          for (const t of thresholds) {
-            detection = await faceapi
-              .detectSingleFace(canvas, new faceapi.SsdMobilenetv1Options({ minConfidence: t }))
-              .withFaceLandmarks()
-              .withFaceDescriptor();
+          for (const t of [0.2, 0.1]) {
+            detection = await faceapi.detectSingleFace(canvas, opts(t))
+              .withFaceLandmarks().withFaceDescriptor();
             if (detection) break;
           }
         }
 
-        resolve(detection ?? null);
+        if (!detection) { resolve(null); return; }
+
+        const box = detection.detection.box;
+        const enhanced = enhanceWithCSLBPAndDBN(detection.descriptor, canvas, {
+          x: box.x, y: box.y, width: box.width, height: box.height,
+        });
+        resolve({ descriptor: enhanced });
       } catch (e) {
         console.warn('Face detection error:', e);
         resolve(null);
@@ -72,6 +112,17 @@ export async function detectSingleFaceFromDataUrl(dataUrl: string): Promise<{ de
     img.onerror = () => resolve(null);
     img.src = dataUrl;
   });
+}
+
+/**
+ * Upgrade a stored raw FaceNet-only descriptor (128-D) through the DBN
+ * so it can be compared against newly generated CS-LBP+DBN descriptors.
+ * Used when re-identifying faces registered before CS-LBP was enabled.
+ */
+export function upgradeFaceNetDescriptor(rawDescriptor: number[]): number[] {
+  const f32 = new Float32Array(rawDescriptor);
+  const enhanced = applyDBN(f32, null); // FaceNet-only path (CS-LBP = zeros)
+  return Array.from(enhanced);
 }
 
 export function createFaceMatcher(labeledDescriptors: faceapi.LabeledFaceDescriptors[], distanceThreshold = 0.5) {
@@ -85,7 +136,6 @@ export function drawFaceBoxes(
 ) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
-
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   detections.forEach((detection, i) => {
@@ -113,7 +163,7 @@ export function drawFaceBoxes(
     ctx.font = 'bold 11px monospace';
     ctx.fillText(label, box.x + padding, box.y + box.height + textHeight);
 
-    const corners = [
+    const corners: [number, number, number, number, number, number][] = [
       [box.x, box.y, 1, 0, 0, 1],
       [box.x + box.width, box.y, -1, 0, 0, 1],
       [box.x, box.y + box.height, 1, 0, 0, -1],
@@ -122,7 +172,7 @@ export function drawFaceBoxes(
     const cornerSize = 10;
     ctx.strokeStyle = isKnown ? '#00ffaa' : '#ff6688';
     ctx.lineWidth = 3;
-    corners.forEach(([cx, cy, dx1, dy1, dx2, dy2]) => {
+    corners.forEach(([cx, cy, dx1, , , dy2]) => {
       ctx.beginPath();
       ctx.moveTo(cx + dx1 * cornerSize, cy);
       ctx.lineTo(cx, cy);
