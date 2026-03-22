@@ -68,7 +68,7 @@ export default function Dataset() {
 
   useEffect(() => {
     if (lfwStatus && (lfwStatus.state === "downloading" || lfwStatus.state === "extracting")) {
-      const t = setInterval(fetchLFWStatus, 3000);
+      const t = setInterval(fetchLFWStatus, 4000);
       return () => clearInterval(t);
     }
   }, [lfwStatus, fetchLFWStatus]);
@@ -232,28 +232,31 @@ export default function Dataset() {
             {lfwStatus ? (
               <div className="space-y-3">
                 <div className={`p-3 rounded border font-mono text-xs ${
-                  lfwStatus.state === "ready" || lfwStatus.isReady ? "border-green-500/30 bg-green-500/10 text-green-400"
+                  lfwStatus.isReady ? "border-green-500/30 bg-green-500/10 text-green-400"
                   : lfwStatus.state === "error" ? "border-destructive/30 bg-destructive/10 text-destructive"
                   : "border-primary/30 bg-primary/10 text-primary"}`}>
-                  {lfwStatus.state === "idle" && "Not downloaded"}
-                  {lfwStatus.state === "downloading" && `⬇ Downloading LFW... (~177MB)`}
-                  {lfwStatus.state === "extracting" && "📦 Extracting archive..."}
-                  {(lfwStatus.state === "ready" || lfwStatus.isReady) && `✓ Ready — ${lfwStatus.totalPersons} persons, ${lfwStatus.totalImages} images`}
-                  {lfwStatus.state === "error" && `Error: ${lfwStatus.error.slice(0, 80)}`}
+                  {lfwStatus.state === "idle" && !lfwStatus.isReady && "Not downloaded yet"}
+                  {lfwStatus.state === "downloading" && "⬇ Downloading LFW dataset (~177MB) via fetch..."}
+                  {lfwStatus.state === "extracting" && "📦 Extracting archive (this takes ~1 min)..."}
+                  {lfwStatus.isReady && `✓ Ready — ${lfwStatus.totalPersons} persons, ${lfwStatus.totalImages} images`}
+                  {lfwStatus.state === "error" && (
+                    <span>Error: {lfwStatus.error || "Download failed"}</span>
+                  )}
                 </div>
 
                 {(lfwStatus.state === "downloading" || lfwStatus.state === "extracting") && (
                   <div className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
                     <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                    Processing... check back in a minute
+                    {lfwStatus.state === "downloading" ? "Downloading (~177MB, may take 2–5 min)..." : "Extracting archive..."}
                   </div>
                 )}
 
-                {lfwStatus.state === "idle" || lfwStatus.state === "error" ? (
+                {(lfwStatus.state === "idle" || lfwStatus.state === "error") && !lfwStatus.isReady && (
                   <Button className="w-full" onClick={startDownload}>
-                    <Download className="w-4 h-4 mr-2" /> Download from Official Source
+                    <Download className="w-4 h-4 mr-2" />
+                    {lfwStatus.state === "error" ? "Retry Download" : "Download from Official Source"}
                   </Button>
-                ) : null}
+                )}
 
                 {(lfwStatus.isReady) && (
                   <div className="space-y-2">
