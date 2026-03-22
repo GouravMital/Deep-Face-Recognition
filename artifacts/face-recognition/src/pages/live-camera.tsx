@@ -278,11 +278,11 @@ export default function LiveCamera() {
                       {selectedEvent.mood.engagement_level}
                     </CyberBadge>
                   </div>
-                  {selectedEvent.mood.micro_expressions.length > 0 && (
+                  {(selectedEvent.mood.micro_expressions?.length ?? 0) > 0 && (
                     <div>
                       <p className="text-muted-foreground mb-1">MICRO-EXPRESSIONS</p>
                       <div className="flex flex-wrap gap-1">
-                        {selectedEvent.mood.micro_expressions.map((e, i) => (
+                        {(selectedEvent.mood.micro_expressions ?? []).map((e, i) => (
                           <span key={i} className="px-2 py-0.5 bg-primary/10 border border-primary/20 rounded text-primary text-xs">{e}</span>
                         ))}
                       </div>
