@@ -3,7 +3,7 @@ import Webcam from "react-webcam";
 import { detectFaces } from "../lib/face-api";
 import { useIdentifyFace } from "@workspace/api-client-react";
 import { Card, Button, CyberBadge } from "../components/ui-elements";
-import { Camera, Scan, PowerOff, Target } from "lucide-react";
+import { Camera, Scan, PowerOff, Target, Video } from "lucide-react";
 import * as faceapi from '@vladmandic/face-api';
 
 interface BoundingBox {
